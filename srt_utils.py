@@ -1,45 +1,25 @@
 # Written by Chiw the Neko <chiwtheneko@gmail.com>
-import re
+import json
 from pathlib import Path
 from path_utils import generate_unique_path
 
 
 
-def parse_srt_string(srt_content):
-  # Regex pattern:
-  # 1. (\d+) -> The index/line number
-  # 2. (\d{2}:\d{2}:\d{2},\d{3}) -> Start timestamp
-  # 3. (\d{2}:\d{2}:\d{2},\d{3}) -> End timestamp
-  # 4. (.*?) -> The text content (non-greedy, matches multiple lines)
-  # Re.DOTALL allows the dot to match newlines within the text block
-  pattern = re.compile(
-    r"(\d+)\s+"
-    r"(\d{2}:\d{2}:\d{2},\d{3}) --> (\d{2}:\d{2}:\d{2},\d{3})\s+"
-    r"(.*?)(?=\n\n|\n*$)",
-    re.DOTALL
-  )
+def parse_srt_json(json_string: str):
+  # Cleanup the JSON string in case Gemini got freaky
+  clean_json = json_string.strip().replace("```json", "").replace("```", "")
 
+  # Parse JSON response
+  data = json.loads(clean_json)
 
-  def timestamp_to_seconds(ts):
-    # Converts HH:MM:SS,mmm to float seconds
-    h, m, s_ms = ts.split(':')
-    s, ms = s_ms.split(',')
-    return int(h) * 3600 + int(m) * 60 + int(s) + int(ms) / 1000.0
+  # Get array of subtitles
+  subtitle_list = data["subtitles"]
 
-
-  subtitle_list = []
-  for match in pattern.finditer(srt_content):
-    line_number = int(match.group(1))
-    start_time = timestamp_to_seconds(match.group(2))
-    end_time = timestamp_to_seconds(match.group(3))
-    text = match.group(4).strip()
-
-    subtitle_list.append({
-      "index": line_number,
-      "start": start_time,
-      "end"  : end_time,
-      "text" : text
-    })
+  # Add indices
+  i = 1
+  for subtitle in subtitle_list:
+    subtitle['index'] = i
+    i += 1
 
   return subtitle_list
 
@@ -57,7 +37,7 @@ def merge_srt(transcriptions):
   subtitles = []
   i = 0
   for transcription in transcriptions:
-    transcription_subtitles = parse_srt_string(transcription['text'])
+    transcription_subtitles = parse_srt_json(transcription['json'])
     print("index:", i, "start:", transcription['start'])
     shift_srt(transcription['start'], i, transcription_subtitles)
     subtitles.extend(transcription_subtitles)

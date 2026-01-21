@@ -87,7 +87,7 @@ def main():
         print(response)
         transcriptions.append({
           'start': chunk['start'],
-          'text' : response
+          'json' : response
         })
         time.sleep(30)  # Be polite
 
@@ -97,7 +97,7 @@ def main():
         response = translate_srt(translation['text'], working_dir, api_key)
         print("-------------------------------------------")
         print(response)
-        translation['text'] = response
+        translation['json'] = response
         time.sleep(30)  # Be polite
 
       # Parse and merge transcriptions

@@ -36,9 +36,28 @@ SPECIFIC INSTRUCTIONS:
    - Do NOT add any notes, explanations, or "Translator's Notes" in the output.
 """
 
+safety_settings = [
+  types.SafetySetting(
+    category = types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+    threshold = types.HarmBlockThreshold.OFF,
+  ),
+  types.SafetySetting(
+    category = types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+    threshold = types.HarmBlockThreshold.OFF,
+  ),
+  types.SafetySetting(
+    category = types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+    threshold = types.HarmBlockThreshold.OFF,
+  ),
+  types.SafetySetting(
+    category = types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+    threshold = types.HarmBlockThreshold.OFF,
+  ),
+]
 
 
-def generate_with_retry(client: genai.Client, instructions, temperature: float, top_p: float, content, max_retries = 10):
+
+def generate_with_retry(client: genai.Client, config: types.GenerateContentConfig, content, max_retries = 10):
   def wait_a_little(nb_attempt):
     # Exponential backoff: 2, 4, 8, 16, 32... seconds
     # Plus "jitter" (a random decimal) to smooth out traffic spikes
@@ -49,38 +68,12 @@ def generate_with_retry(client: genai.Client, instructions, temperature: float, 
     time.sleep(wait_time)
 
 
-  # Define settings to be as permissive as possible
-  safety_settings = [
-    types.SafetySetting(
-      category = types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-      threshold = types.HarmBlockThreshold.OFF,
-    ),
-    types.SafetySetting(
-      category = types.HarmCategory.HARM_CATEGORY_HARASSMENT,
-      threshold = types.HarmBlockThreshold.OFF,
-    ),
-    types.SafetySetting(
-      category = types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-      threshold = types.HarmBlockThreshold.OFF,
-    ),
-    types.SafetySetting(
-      category = types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-      threshold = types.HarmBlockThreshold.OFF,
-    ),
-  ]
-
   # Try several times if needed
   for attempt in range(max_retries):
     try:
       response = client.models.generate_content(
         model = gemini_model,
-        config = types.GenerateContentConfig(
-          safety_settings = safety_settings,
-          system_instruction = instructions,
-          media_resolution = types.MediaResolution.MEDIA_RESOLUTION_LOW,
-          top_p = top_p,
-          temperature = temperature
-        ),
+        config = config,
         contents = content
       )
 
@@ -196,11 +189,57 @@ def transcribe_audio(audio_path: Path, api_key: str):
   # Request Transcription
   try:
     print("Transcribing...")
+
+    # Reply schema
+    subtitle_schema = {
+      "type"      : "OBJECT",
+      "properties": {
+        "subtitles": {
+          "type" : "ARRAY",
+          "items": {
+            "type"      : "OBJECT",
+            "properties": {
+              "start": {
+                "type"       : "NUMBER",
+                "description": "Time at which the segment begins in seconds (e.g., 12.45)",
+                "minimum"    : 0
+              },
+              "end"  : {
+                "type"       : "NUMBER",
+                "description": "End at which the segment ends in seconds (e.g., 15.10)",
+                "minimum"    : 0
+              },
+              "text" : {
+                "type"       : "STRING",
+                "description": "The transcribed text for this segment"
+              }
+            },
+            "required"  : ["start", "end", "text"]
+          }
+        }
+      },
+      "required"  : ["subtitles"]
+    }
+
+    # Config
+    config = types.GenerateContentConfig(
+      response_mime_type = "application/json",
+      response_schema = subtitle_schema,
+      safety_settings = safety_settings,
+      system_instruction = transcription_instruction,
+      media_resolution = types.MediaResolution.MEDIA_RESOLUTION_LOW,
+      top_p = 0.9,
+      temperature = 0.0
+    )
+
+    # Content
     content = [
-      "Generate highly accurate Japanese transcription of this audio clip in SRT format.",
+      "Generate highly accurate Japanese transcription of this video clip into JSON subtitles.",
       audio_file
     ]
-    response = generate_with_retry(client, transcription_instruction, 0.1, 0.9, content)
+
+    # Send request to Gemini
+    response = generate_with_retry(client, config, content)
 
   # Delete audio file from server
   finally:
@@ -223,11 +262,23 @@ def translate_srt(text: str, working_dir: Path, api_key: str):
   # Request Transcription
   try:
     print("Translating...")
+
+    # Config
+    config = types.GenerateContentConfig(
+      safety_settings = safety_settings,
+      system_instruction = translation_instruction,
+      top_p = 0.9,
+      temperature = 0.3
+    )
+
+    # Content
     content = [
       "Translate this SRT file from Japanese to English.",
       srt_file
     ]
-    response = generate_with_retry(client, translation_instruction, 0.3, 0.9, content)
+
+    # Send request to Gemini
+    response = generate_with_retry(client, config, content)
 
   # Delete audio file from server
   finally:
