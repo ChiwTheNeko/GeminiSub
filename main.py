@@ -6,7 +6,7 @@ import argparse
 import tempfile
 import logging
 from pathlib import Path
-from ffmpeg_utils import extract_all_audio, extract_audio, get_file_duration, FFmpegError
+from ffmpeg_utils import extract_all_audio, extract_audio_as_video, get_file_duration, FFmpegError
 from gemini_utils import transcribe_audio, display_available_models, translate_srt
 from vad_utils import find_speech_timestamps, find_optimal_split_points
 from srt_utils import merge_srt, write_srt_file
@@ -71,7 +71,8 @@ def main():
       chunks = []
       start = 0
       for split in splits:
-        chunk = extract_audio(audio_path, start, split, working_dir)
+        # chunk = extract_audio(audio_path, start, split, working_dir)
+        chunk = extract_audio_as_video(audio_path, start, split, working_dir)
         chunks.append({
           'start': start,
           'audio': chunk

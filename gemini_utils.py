@@ -77,6 +77,7 @@ def generate_with_retry(client: genai.Client, instructions, temperature: float, 
         config = types.GenerateContentConfig(
           safety_settings = safety_settings,
           system_instruction = instructions,
+          media_resolution = types.MediaResolution.MEDIA_RESOLUTION_LOW,
           top_p = top_p,
           temperature = temperature
         ),
