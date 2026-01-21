@@ -4,20 +4,6 @@ from path_utils import generate_unique_path
 
 
 
-def extract_subtitle_list(data):
-  # Get array of subtitles
-  subtitle_list = data["subtitles"]
-
-  # Add indices
-  i = 1
-  for subtitle in subtitle_list:
-    subtitle['index'] = i
-    i += 1
-
-  return subtitle_list
-
-
-
 def shift_srt(start_time: float, start_index: int, subtitle_list):
   for sub in subtitle_list:
     sub['index'] = sub['index'] + start_index
@@ -26,15 +12,16 @@ def shift_srt(start_time: float, start_index: int, subtitle_list):
 
 
 
-def merge_srt(transcriptions):
+def merge_srt(chunks):
   subtitles = []
   i = 0
-  for transcription in transcriptions:
-    transcription_subtitles = extract_subtitle_list(transcription['data'])
-    print("index:", i, "start:", transcription['start'])
-    shift_srt(transcription['start'], i, transcription_subtitles)
-    subtitles.extend(transcription_subtitles)
-    i += len(transcription_subtitles)
+  for chunk in chunks:
+    chunk_start_time = chunk['start']
+    chunk_subtitles = chunk['data']
+    print("index:", i, "start:", chunk_start_time)
+    shift_srt(chunk_start_time, i, chunk_subtitles)
+    subtitles.extend(chunk_subtitles)
+    i += len(chunk_subtitles)
   return subtitles
 
 

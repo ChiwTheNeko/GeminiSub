@@ -8,7 +8,6 @@ from google import genai
 from google.genai import errors
 from google.genai import types
 from exception_utils import get_fqn
-from path_utils import generate_temporary_path
 
 
 
@@ -193,7 +192,7 @@ def upload(client: genai.Client, file_path: Path):
 
 
 
-def transcribe_audio(audio_path: Path, api_key: str):
+def transcribe(audio_path: Path, api_key: str):
   client = genai.Client(api_key = api_key)
 
   # Upload audio clip to Google server
@@ -242,7 +241,7 @@ def transcribe_audio(audio_path: Path, api_key: str):
       system_instruction = transcription_instruction,
       media_resolution = types.MediaResolution.MEDIA_RESOLUTION_LOW,
       top_p = 0.9,
-      temperature = 0.0
+      temperature = 0.1
     )
 
     # Content
@@ -258,43 +257,89 @@ def transcribe_audio(audio_path: Path, api_key: str):
   finally:
     client.files.delete(name = audio_file.name)
 
-  return response
+  # Get array of subtitles from response
+  subtitle_list = response["subtitles"]
+
+  # Add indices
+  i = 1
+  for subtitle in subtitle_list:
+    subtitle['index'] = i
+    i += 1
+
+  # Return list of transcribed subtitles
+  return subtitle_list
 
 
 
-def translate_srt(text: str, working_dir: Path, api_key: str):
+def translate(subtitles, api_key: str):
   client = genai.Client(api_key = api_key)
 
-  # Save text into a temporary file
-  srt_path = generate_temporary_path(working_dir, "srt")
-  srt_path.write_text(text, encoding = 'utf-8')
+  # List subtitle lines, without indices and timestamps
+  lines = []
+  for subtitle in subtitles:
+    lines.append({
+      'text': subtitle['text']
+    })
 
-  # Upload the file to the Media API
-  srt_file = upload(client, srt_path)
+  # Dump JSON of all lines
+  lines_dump = json.dumps(lines, ensure_ascii = False, indent = 2)
 
   # Request Transcription
-  try:
-    print("Translating...")
+  print("Translating...")
 
-    # Config
-    config = types.GenerateContentConfig(
-      safety_settings = safety_settings,
-      system_instruction = translation_instruction,
-      top_p = 0.9,
-      temperature = 0.3
-    )
+  # Reply schema
+  translation_schema = {
+    "type"      : "OBJECT",
+    "properties": {
+      "lines": {
+        "type" : "ARRAY",
+        "items": {
+          "type"      : "OBJECT",
+          "properties": {
+            "text": {
+              "type"       : "STRING",
+              "description": "The translated text for this line"
+            }
+          },
+          "required"  : ["text"]
+        }
+      }
+    },
+    "required"  : ["lines"]
+  }
 
-    # Content
-    content = [
-      "Translate this SRT file from Japanese to English.",
-      srt_file
-    ]
+  # Config
+  config = types.GenerateContentConfig(
+    response_mime_type = "application/json",
+    response_schema = translation_schema,
+    safety_settings = safety_settings,
+    system_instruction = translation_instruction,
+    top_p = 0.9,
+    temperature = 0.3
+  )
 
-    # Send request to Gemini
-    response = generate_with_retry(client, config, content)
+  # Content
+  content = [
+    f"Translate these lines from Japanese to English: {lines_dump}"
+  ]
 
-  # Delete audio file from server
-  finally:
-    client.files.delete(name = srt_file.name)
+  # Send request to Gemini
+  response = generate_with_retry(client, config, content)
 
-  return response
+  # Get array of translated lines from response
+  translated_lines = response["lines"]
+
+  # Recreate subtitles from the translated lines
+  translated_subtitles = []
+  for i in range(0, len(subtitles)):
+    subtitle = subtitles[i]
+    translation = translated_lines[i]
+    translated_subtitles.append({
+      'index': subtitle['index'],
+      'start': subtitle['start'],
+      'end'  : subtitle['end'],
+      'text' : translation['text'],
+    })
+
+  # Return list of translated subtitles
+  return translated_subtitles
