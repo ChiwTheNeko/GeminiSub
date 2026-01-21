@@ -57,7 +57,15 @@ safety_settings = [
 
 
 
-def generate_with_retry(client: genai.Client, config: types.GenerateContentConfig, content, max_retries = 10):
+def safe_json_loads(json_string, default = None):
+  try:
+    return json.loads(json_string)
+  except (json.JSONDecodeError, TypeError):
+    return default
+
+
+
+def generate_with_retry(client: genai.Client, config: types.GenerateContentConfig, content, expected_key: str, expected_nb: int = -1, max_retries = 10):
   def wait_a_little(nb_attempt):
     # Exponential backoff: 2, 4, 8, 16, 32... seconds
     # Plus "jitter" (a random decimal) to smooth out traffic spikes
@@ -108,15 +116,18 @@ def generate_with_retry(client: genai.Client, config: types.GenerateContentConfi
         clean_json = response.text.strip().replace("```json", "").replace("```", "")
 
         # Parse JSON response
-        try:
-          data = json.loads(clean_json)
+        data = safe_json_loads(clean_json)
+        if data is not None:
+          # Extract the array of data we want from the JSON
+          array = data.get(expected_key)
+  
+          # Return array of data
+          if array is not None and (expected_nb < 0 or len(array) == expected_nb):
+            return array
 
-          # Return parsed data
-          return data
-
-        # If parsing failed then try again with a higher temperature
-        except json.JSONDecodeError:
-          config.temperature += 0.1
+        # If parsing failed or we didn't get the data we expected then try again with a higher temperature
+        config.temperature += 0.1
+        print(f"Failed to parse response. Retrying with higher temperature {config.temperature}.")
 
     except google.genai.errors.ServerError as e:
       # Model not found
@@ -251,14 +262,11 @@ def transcribe(audio_path: Path, api_key: str):
     ]
 
     # Send request to Gemini
-    response = generate_with_retry(client, config, content)
+    subtitle_list = generate_with_retry(client, config, content, "subtitles")
 
   # Delete audio file from server
   finally:
     client.files.delete(name = audio_file.name)
-
-  # Get array of subtitles from response
-  subtitle_list = response["subtitles"]
 
   # Add indices
   i = 1
@@ -324,10 +332,7 @@ def translate(subtitles, api_key: str):
   ]
 
   # Send request to Gemini
-  response = generate_with_retry(client, config, content)
-
-  # Get array of translated lines from response
-  translated_lines = response["lines"]
+  translated_lines = generate_with_retry(client, config, content, "lines", expected_nb = len(subtitles))
 
   # Recreate subtitles from the translated lines
   translated_subtitles = []
