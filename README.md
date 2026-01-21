@@ -14,4 +14,5 @@ A throwaway script to generate translated subtitles with Gemini API.
 # How to use
 - Set your Gemini API key into the GEMINI_API_KEY environment variable.
 - Execute `python main.py <path to your video file>`
+- Execute `python main.py --list-models` to print a list of available Gemini models.
 - Pray.
