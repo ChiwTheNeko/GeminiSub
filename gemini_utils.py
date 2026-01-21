@@ -1,13 +1,13 @@
 # Written by Chiw the Neko <chiwtheneko@gmail.com>
 import time
 import random
+import json
 import google.api_core.exceptions
 from pathlib import Path
 from google import genai
 from google.genai import errors
 from google.genai import types
 from exception_utils import get_fqn
-from path_utils import generate_temporary_path
 
 
 
@@ -57,7 +57,15 @@ safety_settings = [
 
 
 
-def generate_with_retry(client: genai.Client, config: types.GenerateContentConfig, content, max_retries = 10):
+def safe_json_loads(json_string, default = None):
+  try:
+    return json.loads(json_string)
+  except (json.JSONDecodeError, TypeError):
+    return default
+
+
+
+def generate_with_retry(client: genai.Client, config: types.GenerateContentConfig, content, expected_key: str, expected_nb: int = -1, max_retries = 10):
   def wait_a_little(nb_attempt):
     # Exponential backoff: 2, 4, 8, 16, 32... seconds
     # Plus "jitter" (a random decimal) to smooth out traffic spikes
@@ -102,9 +110,24 @@ def generate_with_retry(client: genai.Client, config: types.GenerateContentConfi
             print("The model collapsed or the server cut the connection.")
         wait_a_little(attempt)
 
-      # Done
+      # We got a response and it should be JSON, try to parse it
       else:
-        return response
+        # Cleanup the JSON string in case Gemini got freaky
+        clean_json = response.text.strip().replace("```json", "").replace("```", "")
+
+        # Parse JSON response
+        data = safe_json_loads(clean_json)
+        if data is not None:
+          # Extract the array of data we want from the JSON
+          array = data.get(expected_key)
+  
+          # Return array of data
+          if array is not None and (expected_nb < 0 or len(array) == expected_nb):
+            return array
+
+        # If parsing failed or we didn't get the data we expected then try again with a higher temperature
+        config.temperature += 0.1
+        print(f"Failed to parse response. Retrying with higher temperature {config.temperature}.")
 
     except google.genai.errors.ServerError as e:
       # Model not found
@@ -180,7 +203,7 @@ def upload(client: genai.Client, file_path: Path):
 
 
 
-def transcribe_audio(audio_path: Path, api_key: str):
+def transcribe(audio_path: Path, api_key: str):
   client = genai.Client(api_key = api_key)
 
   # Upload audio clip to Google server
@@ -229,7 +252,7 @@ def transcribe_audio(audio_path: Path, api_key: str):
       system_instruction = transcription_instruction,
       media_resolution = types.MediaResolution.MEDIA_RESOLUTION_LOW,
       top_p = 0.9,
-      temperature = 0.0
+      temperature = 0.1
     )
 
     # Content
@@ -239,49 +262,89 @@ def transcribe_audio(audio_path: Path, api_key: str):
     ]
 
     # Send request to Gemini
-    response = generate_with_retry(client, config, content)
+    subtitle_list = generate_with_retry(client, config, content, "subtitles")
 
   # Delete audio file from server
   finally:
     client.files.delete(name = audio_file.name)
 
-  return response.text
+  # Add indices
+  i = 1
+  for subtitle in subtitle_list:
+    subtitle['index'] = i
+    i += 1
+
+  # Return list of transcribed subtitles
+  return subtitle_list
 
 
 
-def translate_srt(text: str, working_dir: Path, api_key: str):
+def translate(subtitles, api_key: str):
   client = genai.Client(api_key = api_key)
 
-  # Save text into a temporary file
-  srt_path = generate_temporary_path(working_dir, "srt")
-  srt_path.write_text(text, encoding = 'utf-8')
+  # List subtitle lines, without indices and timestamps
+  lines = []
+  for subtitle in subtitles:
+    lines.append({
+      'text': subtitle['text']
+    })
 
-  # Upload the file to the Media API
-  srt_file = upload(client, srt_path)
+  # Dump JSON of all lines
+  lines_dump = json.dumps(lines, ensure_ascii = False, indent = 2)
 
   # Request Transcription
-  try:
-    print("Translating...")
+  print("Translating...")
 
-    # Config
-    config = types.GenerateContentConfig(
-      safety_settings = safety_settings,
-      system_instruction = translation_instruction,
-      top_p = 0.9,
-      temperature = 0.3
-    )
+  # Reply schema
+  translation_schema = {
+    "type"      : "OBJECT",
+    "properties": {
+      "lines": {
+        "type" : "ARRAY",
+        "items": {
+          "type"      : "OBJECT",
+          "properties": {
+            "text": {
+              "type"       : "STRING",
+              "description": "The translated text for this line"
+            }
+          },
+          "required"  : ["text"]
+        }
+      }
+    },
+    "required"  : ["lines"]
+  }
 
-    # Content
-    content = [
-      "Translate this SRT file from Japanese to English.",
-      srt_file
-    ]
+  # Config
+  config = types.GenerateContentConfig(
+    response_mime_type = "application/json",
+    response_schema = translation_schema,
+    safety_settings = safety_settings,
+    system_instruction = translation_instruction,
+    top_p = 0.9,
+    temperature = 0.3
+  )
 
-    # Send request to Gemini
-    response = generate_with_retry(client, config, content)
+  # Content
+  content = [
+    f"Translate these lines from Japanese to English: {lines_dump}"
+  ]
 
-  # Delete audio file from server
-  finally:
-    client.files.delete(name = srt_file.name)
+  # Send request to Gemini
+  translated_lines = generate_with_retry(client, config, content, "lines", expected_nb = len(subtitles))
 
-  return response.text
+  # Recreate subtitles from the translated lines
+  translated_subtitles = []
+  for i in range(0, len(subtitles)):
+    subtitle = subtitles[i]
+    translation = translated_lines[i]
+    translated_subtitles.append({
+      'index': subtitle['index'],
+      'start': subtitle['start'],
+      'end'  : subtitle['end'],
+      'text' : translation['text'],
+    })
+
+  # Return list of translated subtitles
+  return translated_subtitles

@@ -7,7 +7,7 @@ import tempfile
 import logging
 from pathlib import Path
 from ffmpeg_utils import extract_all_audio, extract_audio_as_video, get_file_duration, FFmpegError
-from gemini_utils import transcribe_audio, display_available_models, translate_srt
+from gemini_utils import display_available_models, transcribe, translate
 from vad_utils import find_speech_timestamps, find_optimal_split_points
 from srt_utils import merge_srt, write_srt_file
 from exception_utils import get_fqn
@@ -82,22 +82,25 @@ def main():
       # Transcribe audio chunks
       transcriptions = []
       for chunk in chunks:
-        response = transcribe_audio(chunk['audio'], api_key)
+        subtitles = transcribe(chunk['audio'], api_key)
         print("-------------------------------------------")
-        print(response)
+        print(subtitles)
         transcriptions.append({
           'start': chunk['start'],
-          'json' : response
+          'data' : subtitles
         })
         time.sleep(30)  # Be polite
 
-      # Translated chunks
-      translations = copy.deepcopy(transcriptions)
-      for translation in translations:
-        response = translate_srt(translation['text'], working_dir, api_key)
+      # Translated transcriptions
+      translations = []
+      for transcription in transcriptions:
+        subtitles = translate(transcription['data'], api_key)
         print("-------------------------------------------")
-        print(response)
-        translation['json'] = response
+        print(subtitles)
+        translations.append({
+          'start': transcription['start'],
+          'data' : subtitles
+        })
         time.sleep(30)  # Be polite
 
       # Parse and merge transcriptions
