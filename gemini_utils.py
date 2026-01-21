@@ -1,6 +1,7 @@
 # Written by Chiw the Neko <chiwtheneko@gmail.com>
 import time
 import random
+import json
 import google.api_core.exceptions
 from pathlib import Path
 from google import genai
@@ -102,9 +103,21 @@ def generate_with_retry(client: genai.Client, config: types.GenerateContentConfi
             print("The model collapsed or the server cut the connection.")
         wait_a_little(attempt)
 
-      # Done
+      # We got a response and it should be JSON, try to parse it
       else:
-        return response
+        # Cleanup the JSON string in case Gemini got freaky
+        clean_json = response.text.strip().replace("```json", "").replace("```", "")
+
+        # Parse JSON response
+        try:
+          data = json.loads(clean_json)
+
+          # Return parsed data
+          return data
+
+        # If parsing failed then try again with a higher temperature
+        except json.JSONDecodeError:
+          config.temperature += 0.1
 
     except google.genai.errors.ServerError as e:
       # Model not found
@@ -245,7 +258,7 @@ def transcribe_audio(audio_path: Path, api_key: str):
   finally:
     client.files.delete(name = audio_file.name)
 
-  return response.text
+  return response
 
 
 
@@ -284,4 +297,4 @@ def translate_srt(text: str, working_dir: Path, api_key: str):
   finally:
     client.files.delete(name = srt_file.name)
 
-  return response.text
+  return response

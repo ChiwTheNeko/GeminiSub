@@ -1,17 +1,10 @@
 # Written by Chiw the Neko <chiwtheneko@gmail.com>
-import json
 from pathlib import Path
 from path_utils import generate_unique_path
 
 
 
-def parse_srt_json(json_string: str):
-  # Cleanup the JSON string in case Gemini got freaky
-  clean_json = json_string.strip().replace("```json", "").replace("```", "")
-
-  # Parse JSON response
-  data = json.loads(clean_json)
-
+def extract_subtitle_list(data):
   # Get array of subtitles
   subtitle_list = data["subtitles"]
 
@@ -37,7 +30,7 @@ def merge_srt(transcriptions):
   subtitles = []
   i = 0
   for transcription in transcriptions:
-    transcription_subtitles = parse_srt_json(transcription['json'])
+    transcription_subtitles = extract_subtitle_list(transcription['data'])
     print("index:", i, "start:", transcription['start'])
     shift_srt(transcription['start'], i, transcription_subtitles)
     subtitles.extend(transcription_subtitles)

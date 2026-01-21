@@ -87,18 +87,18 @@ def main():
         print(response)
         transcriptions.append({
           'start': chunk['start'],
-          'json' : response
+          'data' : response
         })
         time.sleep(30)  # Be polite
 
-      # Translated chunks
-      translations = copy.deepcopy(transcriptions)
-      for translation in translations:
-        response = translate_srt(translation['text'], working_dir, api_key)
-        print("-------------------------------------------")
-        print(response)
-        translation['json'] = response
-        time.sleep(30)  # Be polite
+      # # Translated chunks
+      # translations = copy.deepcopy(transcriptions)
+      # for translation in translations:
+      #   response = translate_srt(translation['text'], working_dir, api_key)
+      #   print("-------------------------------------------")
+      #   print(response)
+      #   translation['data'] = response
+      #   time.sleep(30)  # Be polite
 
       # Parse and merge transcriptions
       transcribed_subtitles = merge_srt(transcriptions)
@@ -106,11 +106,11 @@ def main():
       # Save transcribed subtitle
       write_srt_file(video_path, "jp", transcribed_subtitles)
 
-      # Parse and merge translations
-      translated_subtitles = merge_srt(translations)
-
-      # Save translated subtitle
-      write_srt_file(video_path, "en", translated_subtitles)
+      # # Parse and merge translations
+      # translated_subtitles = merge_srt(translations)
+      # 
+      # # Save translated subtitle
+      # write_srt_file(video_path, "en", translated_subtitles)
 
     except FFmpegError as err:
       # This specifically catches our FFmpeg errors
