@@ -1,7 +1,6 @@
 # Written by Chiw the Neko <chiwtheneko@gmail.com>
 import os
 import time
-import copy
 import argparse
 import tempfile
 import logging
@@ -71,7 +70,6 @@ def main():
       chunks = []
       start = 0
       for split in splits:
-        # chunk = extract_audio(audio_path, start, split, working_dir)
         chunk = extract_audio_as_video(audio_path, start, split, working_dir)
         chunks.append({
           'start': start,

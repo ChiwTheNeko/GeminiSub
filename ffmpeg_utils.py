@@ -57,32 +57,10 @@ def get_file_duration(file_path: Path):
 
 
 
-def extract_audio(audio_path: Path, start_time: float, end_time: float, working_dir: Path):
-  # Generate a unique filename for this specific clip
-  output_path = generate_temporary_path(working_dir, "mp3")
-
-  command = [
-    "ffmpeg", "-hide_banner", "-loglevel", "level+error",
-    "-ss", str(start_time),
-    "-to", str(end_time),
-    "-i", audio_path,
-    output_path
-  ]
-
-  try:
-    subprocess.run(command, capture_output = True, text = True, check = True)
-    return output_path
-  except subprocess.CalledProcessError as e:
-    print(f"FFmpeg Error: {e.stderr}")
-    error_message = e.stderr.strip() or "Unknown FFmpeg error"
-    raise FFmpegError(f"FFmpeg failed with exit code {e.returncode}: {error_message}")
-
-
-
 def extract_audio_as_video(audio_path: Path, start_time: float, end_time: float, working_dir: Path):
   # Generate a unique filename for this specific clip
   output_path = generate_temporary_path(working_dir, "mp4")
-  
+
   print("generate ", start_time, end_time)
 
   command = [
@@ -94,6 +72,7 @@ def extract_audio_as_video(audio_path: Path, start_time: float, end_time: float,
     "-i", "color=c=black:s=640x480:r=24",
     "-tune", "stillimage",
     "-pix_fmt", "yuv420p",
+    "-c:a", "copy",
     "-shortest",
     output_path
   ]
